@@ -1,4 +1,4 @@
-# Learn Three.js Simple Particle System
+# Learn Three.js: Simple Particle System
 
 Learn three simple particle effects with Three.js!
 Quick, easy-to-create effects like Fire, Smoke and Sparkles.
