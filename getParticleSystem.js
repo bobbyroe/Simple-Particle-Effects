@@ -9,6 +9,7 @@ attribute vec4 aColor;
 
 varying vec4 vColor;
 varying vec2 vAngle;
+varying float vZ;
 
 void main() {
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
@@ -18,17 +19,38 @@ void main() {
 
   vAngle = vec2(cos(angle), sin(angle));
   vColor = aColor;
+  vZ = mvPosition.z;
 }`;
 
 const _FS = `
+#include <packing>
+
 uniform sampler2D diffuseTexture;
+uniform sampler2D depthTexture;
+uniform float nf;
+uniform float f_sub_n;
+uniform float f;
+uniform vec2 resolution;
 
 varying vec4 vColor;
 varying vec2 vAngle;
+varying float vZ;
+
+float getDepth(vec2 uv) {
+  float z_final = texture2D(depthTexture, uv).x;
+  return nf / (f_sub_n * z_final - f);
+}
 
 void main() {
   vec2 coords = (gl_PointCoord - 0.5) * mat2(vAngle.x, vAngle.y, -vAngle.y, vAngle.x) + 0.5;
   gl_FragColor = texture2D(diffuseTexture, coords) * vColor;
+
+  vec2 screenCoords = gl_FragCoord.xy / resolution.xy;
+  float sceneDepth = getDepth(screenCoords);
+  float curDepth = vZ;
+  float diff = clamp(curDepth - sceneDepth, 0.0, 1.0);
+
+  gl_FragColor.a = diff;
 }`;
 
 
@@ -66,14 +88,31 @@ function getLinearSpline(lerp) {
 }
 
 function getParticleSystem(params) {
-  const { camera, emitter, parent, rate, texture } = params;
+  const { camera, emitter, parent, rate, texture, depthTexture } = params;
   const uniforms = {
     diffuseTexture: {
       value: new THREE.TextureLoader().load(texture)
     },
     pointMultiplier: {
       value: window.innerHeight / (2.0 * Math.tan(30.0 * Math.PI / 180.0))
+    },
+    //
+    resolution: {
+      value: new THREE.Vector2(window.innerWidth, window.innerHeight)
+    },
+    depthTexture: {
+      value: depthTexture
+    },
+    nf: {
+      value: camera.far * camera.near
+    },
+    f_sub_n: {
+      value: camera.far - camera.near
+    },
+    f: {
+      value: camera.far
     }
+    //
   };
   const _material = new THREE.ShaderMaterial({
     uniforms: uniforms,
@@ -122,6 +161,7 @@ function getParticleSystem(params) {
   const maxLife = 1.5;
   const maxSize = 3.0;
   let gdfsghk = 0.0;
+
   function _AddParticles(timeElapsed) {
     gdfsghk += timeElapsed;
     const n = Math.floor(gdfsghk * rate);
@@ -214,10 +254,17 @@ function getParticleSystem(params) {
     });
   }
 
-  function update(timeElapsed) {
-    _AddParticles(timeElapsed);
-    _UpdateParticles(timeElapsed);
+  function _UpdateUniforms(depthTexture) {
+    _material.uniforms.depthTexture.value = depthTexture;
+    _material.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+  }
+  
+  function update({ t, depthTexture }) {
+    _AddParticles(t);
+    _UpdateParticles(t);
     _UpdateGeometry();
+    _UpdateUniforms(depthTexture);
+
   }
   return { update };
 }

@@ -14,6 +14,18 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
+//
+const renderTarget = new THREE.WebGLRenderTarget(w, h);
+renderTarget.texture.format = THREE.RGBAFormat;
+renderTarget.texture.minFilter = THREE.NearestFilter;
+renderTarget.texture.magFilter = THREE.NearestFilter;
+renderTarget.texture.generateMipmaps = false;
+renderTarget.stencilBuffer = false;
+renderTarget.depthBuffer = true;
+renderTarget.depthTexture = new THREE.DepthTexture();
+renderTarget.depthTexture.type = THREE.UnsignedShortType;
+renderTarget.depthTexture.format = THREE.DepthFormat;
+//
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.03;
@@ -53,8 +65,16 @@ function animate() {
 
   cube.rotation.x += 0.01;
   cube.rotation.y += 0.02;
-  fireEffect.update(0.016);
+  
+  renderer.setRenderTarget(renderTarget);
   renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  fireEffect.update({ 
+    t: 0.016, 
+    depthTexture: renderTarget.depthTexture,
+  });
+  renderer.render(scene, camera);
+
   controls.update();
 }
 
