@@ -50,7 +50,7 @@ void main() {
   float curDepth = vZ;
   float diff = clamp(curDepth - sceneDepth, 0.0, 1.0);
 
-  gl_FragColor.a = diff;
+  gl_FragColor.a *= diff;
 }`;
 
 
