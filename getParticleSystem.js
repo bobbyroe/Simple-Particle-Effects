@@ -67,6 +67,7 @@ function getLinearSpline(lerp) {
 
 function getParticleSystem(params) {
   const { camera, emitter, parent, rate, texture } = params;
+  const MAX_PARTICLES = 10000;
   const uniforms = {
     diffuseTexture: {
       value: new THREE.TextureLoader().load(texture)
@@ -89,10 +90,16 @@ function getParticleSystem(params) {
   let _particles = [];
 
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
-  geometry.setAttribute('size', new THREE.Float32BufferAttribute([], 1));
-  geometry.setAttribute('aColor', new THREE.Float32BufferAttribute([], 4));
-  geometry.setAttribute('angle', new THREE.Float32BufferAttribute([], 1));
+
+  const positions = new Float32Array(MAX_PARTICLES * 3);
+  const sizes = new Float32Array(MAX_PARTICLES * 1);
+  const colors = new Float32Array(MAX_PARTICLES * 4);
+  const angles = new Float32Array(MAX_PARTICLES * 1);
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 4).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('angle', new THREE.BufferAttribute(angles, 1).setUsage(THREE.DynamicDrawUsage));
 
   const _points = new THREE.Points(geometry, _material);
 
@@ -146,31 +153,41 @@ function getParticleSystem(params) {
   }
 
   function _UpdateGeometry() {
-    const positions = [];
-    const sizes = [];
-    const colours = [];
-    const angles = [];
+    const positions = geometry.attributes.position.array;
+    const sizes = geometry.attributes.size.array;
+    const colors = geometry.attributes.aColor.array;
+    const angles = geometry.attributes.angle.array;
 
-    for (let p of _particles) {
-      positions.push(p.position.x, p.position.y, p.position.z);
-      colours.push(p.colour.r, p.colour.g, p.colour.b, p.alpha);
-      sizes.push(p.currentSize);
-      angles.push(p.rotation);
+    const particleCount = _particles.length;
+
+    for (let i = 0; i < particleCount; i++) {
+      const p = _particles[i];
+
+      const i3 = i * 3;
+      const i4 = i * 4;
+      
+
+      positions[i3 + 0] = p.position.x;
+      positions[i3 + 1] = p.position.y;
+      positions[i3 + 2] = p.position.z;
+
+
+      colors[i4 + 0] = p.colour.r;
+      colors[i4 + 1] = p.colour.g;
+      colors[i4 + 2] = p.colour.b;
+      colors[i4 + 3] = p.alpha;
+
+      sizes[i] = p.currentSize;
+      angles[i] = p.rotation;
     }
-
-    geometry.setAttribute(
-      'position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute(
-      'size', new THREE.Float32BufferAttribute(sizes, 1));
-    geometry.setAttribute(
-      'aColor', new THREE.Float32BufferAttribute(colours, 4));
-    geometry.setAttribute(
-      'angle', new THREE.Float32BufferAttribute(angles, 1));
-
+    
+    geometry.setDrawRange(0, particleCount);
+    
     geometry.attributes.position.needsUpdate = true;
     geometry.attributes.size.needsUpdate = true;
     geometry.attributes.aColor.needsUpdate = true;
     geometry.attributes.angle.needsUpdate = true;
+
   }
   _UpdateGeometry();
 
@@ -219,7 +236,19 @@ function getParticleSystem(params) {
     _UpdateParticles(timeElapsed);
     _UpdateGeometry();
   }
-  return { update };
+
+  function dispose() {
+    parent.remove(_points);
+
+    geometry.dispose();
+
+    _material.dispose();
+    uniforms.diffuseTexture.value.dispose();
+
+    _particles = [];
+  }
+  
+  return { update, dispose };
 }
 
 export { getParticleSystem };
