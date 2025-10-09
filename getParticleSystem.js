@@ -67,6 +67,10 @@ function getLinearSpline(lerp) {
 
 function getParticleSystem(params) {
   const { camera, emitter, parent, rate, texture } = params;
+  // Avoids 2 problems
+  // Main Problem 1: Constant Re-creation of Geometry Buffers (Pressure on the Garbage Collector)
+  // Main Problem 2: Lack of a Disposal Method (GPU Memory Leak)
+  const MAX_PARTICLES = 10000; // Define a Maximum Particle Capacity
   const uniforms = {
     diffuseTexture: {
       value: new THREE.TextureLoader().load(texture)
@@ -89,10 +93,18 @@ function getParticleSystem(params) {
   let _particles = [];
 
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
-  geometry.setAttribute('size', new THREE.Float32BufferAttribute([], 1));
-  geometry.setAttribute('aColor', new THREE.Float32BufferAttribute([], 4));
-  geometry.setAttribute('angle', new THREE.Float32BufferAttribute([], 1));
+
+  // Create array with maximum size, filled with zeros.
+  const positions = new Float32Array(MAX_PARTICLES * 3); // 3 components (x, y, z)
+  const sizes = new Float32Array(MAX_PARTICLES * 1);     // 1 components
+  const colors = new Float32Array(MAX_PARTICLES * 4);    // 4 components (r, g, b, a)
+  const angles = new Float32Array(MAX_PARTICLES * 1);    // 1 components
+
+  // Creates attributes ONCE with maximum capacity.
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 4).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('angle', new THREE.BufferAttribute(angles, 1).setUsage(THREE.DynamicDrawUsage));
 
   const _points = new THREE.Points(geometry, _material);
 
@@ -146,31 +158,46 @@ function getParticleSystem(params) {
   }
 
   function _UpdateGeometry() {
-    const positions = [];
-    const sizes = [];
-    const colours = [];
-    const angles = [];
+    // Access pre-allocated arrays directly.
+    const positions = geometry.attributes.position.array;
+    const sizes = geometry.attributes.size.array;
+    const colors = geometry.attributes.aColor.array;
+    const angles = geometry.attributes.angle.array;
 
-    for (let p of _particles) {
-      positions.push(p.position.x, p.position.y, p.position.z);
-      colours.push(p.colour.r, p.colour.g, p.colour.b, p.alpha);
-      sizes.push(p.currentSize);
-      angles.push(p.rotation);
+    const particleCount = _particles.length;
+    
+    // Iterate over the active particles and fill the arrays.
+    for (let i = 0; i < particleCount; i++) {
+      const p = _particles[i];
+
+      const i3 = i * 3;
+      const i4 = i * 4;
+      
+      // Position (x, y, z)
+      positions[i3 + 0] = p.position.x;
+      positions[i3 + 1] = p.position.y;
+      positions[i3 + 2] = p.position.z;
+
+      // Color (r, g, b, a)
+      colors[i4 + 0] = p.colour.r;
+      colors[i4 + 1] = p.colour.g;
+      colors[i4 + 2] = p.colour.b;
+      colors[i4 + 3] = p.alpha;
+
+      // Size and Angle
+      sizes[i] = p.currentSize;
+      angles[i] = p.rotation;
     }
-
-    geometry.setAttribute(
-      'position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute(
-      'size', new THREE.Float32BufferAttribute(sizes, 1));
-    geometry.setAttribute(
-      'aColor', new THREE.Float32BufferAttribute(colours, 4));
-    geometry.setAttribute(
-      'angle', new THREE.Float32BufferAttribute(angles, 1));
-
+    
+    // Limits drawing to only the number of active particles.
+    geometry.setDrawRange(0, particleCount);
+    
+    // Tell Three.js that the data has changed.
     geometry.attributes.position.needsUpdate = true;
     geometry.attributes.size.needsUpdate = true;
     geometry.attributes.aColor.needsUpdate = true;
     geometry.attributes.angle.needsUpdate = true;
+
   }
   _UpdateGeometry();
 
@@ -219,7 +246,24 @@ function getParticleSystem(params) {
     _UpdateParticles(timeElapsed);
     _UpdateGeometry();
   }
-  return { update };
+
+  // Lack of a Disposal Method (GPU Memory Leak)
+  function dispose() {
+    // 1. Removes the object from the scene so that it is no longer rendered.
+    parent.remove(_points);
+
+    // 2. Frees GPU memory allocated for geometry (position, color, etc. buffers).
+    geometry.dispose();
+
+    // 3. Frees the GPU memory allocated for the material (shaders) and texture.
+    _material.dispose();
+    uniforms.diffuseTexture.value.dispose();
+
+    // 4. Clear the particle array on the CPU to free up memory for JS objects.
+    _particles = [];
+  }
+  
+  return { update, dispose };
 }
 
 export { getParticleSystem };
